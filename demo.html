@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>easy-sdf-font demo</title>
+    </head>
+    <body>
+        <canvas id="canvas" width="900" height="300"></canvas>
+        <script type="text/javascript" src="easy_sdf_font.js"></script>
+        <script id="vertexShader" type="x-shader/x-vertex">
+            uniform mat4 m;
+            attribute vec2 pos, uv;
+            varying vec2 vuv;
+            void main() {
+                gl_Position = m * vec4(pos, 0.0, 1.0);
+                vuv = uv;
+            }
+        </script>
+        <script id="fragmentShader" type="x-shader/x-fragment">
+            precision mediump float;
+            varying vec2 vuv;
+            uniform sampler2D tex;
+            void main() {
+                float d = texture2D(tex, vuv).r;
+                float smooth_factor = 0.06;
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0) * smoothstep(0.5 - smooth_factor, 0.5 + smooth_factor, d);
+            }
+        </script>
+        <script type="text/javascript">
+            (function() {
+                var scale = 2.0;
+                var padding = 2;
+                var thickness = 0.5 * scale;
+                var onedge_value = 128;
+                var pixel_dist_scale = onedge_value / padding;
+                var textureSize = 512;
+                var pixels = new Uint8Array(textureSize*textureSize);
+                var t1 = performance.now();
+                var packInfo = esfont.packGlyphs(pixels, textureSize, textureSize, scale, padding, onedge_value, pixel_dist_scale, thickness);
+                var t2 = performance.now();
+                if (!packInfo)
+                    throw new Error('textureSize too small');
+                var canvas = document.getElementById('canvas');
+                var gl = canvas.getContext('webgl');
+                var tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, textureSize, textureSize, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, pixels);
+                gl.generateMipmap(gl.TEXTURE_2D);
+                var s1 = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(s1, document.getElementById('vertexShader').textContent);
+                gl.compileShader(s1);
+                var s2 = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(s2, document.getElementById('fragmentShader').textContent);
+                gl.compileShader(s2);
+                var prog = gl.createProgram();
+                gl.attachShader(prog, s1);
+                gl.attachShader(prog, s2);
+                gl.bindAttribLocation(prog, 0, 'pos');
+                gl.bindAttribLocation(prog, 1, 'uv');
+                gl.linkProgram(prog);
+                var verts = new Float32Array(200 * 24);
+                var vertsBuf = gl.createBuffer();
+                var mat = new Float32Array(16);
+                var matLoc = gl.getUniformLocation(prog, "m");
+                function loop() {
+                    var count = 0;
+                    count += esfont.getTextTri2(packInfo, 'Easy SDF Font', 10, 60, 2.0, verts, count*24);
+                    count += esfont.getTextTri2(packInfo, 'The quick brown fox jumped over the lazy dog.', 10, 120, 1, verts, count*24);
+                    count += esfont.getTextTri2(packInfo, '!"#$%&\'()*+,-./0123456789:;<=>?@[\\]^_`{|}~', 10, 160, 1, verts, count*24);
+                    count += esfont.getTextTri2(packInfo, 'Texture generation took ' + String((t2 - t1) | 0) + ' ms.', 10, 200, 1, verts, count*24);
+                    gl.viewport(0, 0, canvas.width, canvas.height);
+                    gl.clearColor(1, 1, 1, 1);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    gl.enable(gl.BLEND);
+                    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                    gl.useProgram(prog);
+                    // orthographic projection
+                    mat[0] = 2 / canvas.width;
+                    mat[5] = -2 / canvas.height;
+                    mat[10] = 1;
+                    mat[12] = -1;
+                    mat[13] = 1;
+                    mat[14] = 0;
+                    mat[15] = 1;
+                    gl.uniformMatrix4fv(matLoc, false, mat);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vertsBuf);
+                    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+                    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 16, 0);
+                    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 16, 8);
+                    gl.enableVertexAttribArray(0);
+                    gl.enableVertexAttribArray(1);
+                    gl.drawArrays(gl.TRIANGLES, 0, count * 6);
+                    requestAnimationFrame(loop);
+                }
+                requestAnimationFrame(loop);
+            })();
+        </script>
+    </body>
+</html>
